@@ -9,6 +9,7 @@ app.use(express.static('public'));
 const MIN_PLAYERS = 2; 
 const MAX_PLAYERS = 7; 
 const PORT = process.env.PORT || 3000;
+const MAX_HISTORY = 50; // ★履歴の最大保存数
 
 // --- ゲームの状態変数 ---
 let players = {};
@@ -16,6 +17,9 @@ let playerOrder = [];
 let revealOrder = [];
 let currentRevealIndex = 0;
 let isGameStarted = false;
+
+// ★直近の和歌を保存するリスト
+let wakaHistory = [];
 
 function shuffle(array) {
     for (let i = array.length - 1; i > 0; i--) {
@@ -56,9 +60,12 @@ io.on('connection', (socket) => {
         players[socket.id] = { id: socket.id, name: name, pack: [], hand: [], selected: null, finalWaka: null };
         
         console.log(`[参加] ${name} さんが入室しました (ID: ${socket.id})`);
-        console.log(`      現在の人数: ${Object.keys(players).length}人`);
-
         io.emit('update_player_list', Object.values(players).map(p => p.name));
+    });
+
+    // ★追加：履歴データの要求に応答
+    socket.on('request_history', () => {
+        socket.emit('receive_history', wakaHistory);
     });
 
     // 2. ゲーム開始
@@ -73,9 +80,6 @@ io.on('connection', (socket) => {
         
         console.log("=========================================");
         console.log("   🎮 ゲーム開始！");
-        console.log("   参加者順: " + playerOrder.map(id => players[id].name).join(" → "));
-        console.log("=========================================");
-
         io.emit('move_to_input');
     });
 
@@ -83,11 +87,6 @@ io.on('connection', (socket) => {
     socket.on('submit_pack', (packData) => {
         if (!players[socket.id]) return;
         players[socket.id].pack = packData;
-
-        // ログ出力：提出された言葉を見やすく表示
-        const words = packData.map(item => item.text).join(", ");
-        console.log(`[提出] ${players[socket.id].name} がパックを作成: [${words}]`);
-
         checkAllSubmitted();
     });
 
@@ -96,34 +95,22 @@ io.on('connection', (socket) => {
         const player = players[socket.id];
         if (!player || !player.pack[index] || player.selected !== null) return;
         
-        // 選んだカードの内容を取得
-        const pickedCard = player.pack[index];
-        player.selected = pickedCard;
+        player.selected = player.pack[index];
         player.pack.splice(index, 1);
-
-        console.log(`[選択] ${player.name} が「${pickedCard.text}」を選択`);
-
         checkAllPicked();
     });
 
-    // 5. 発表準備完了（和歌保存）
+    // 5. 発表準備完了
     socket.on('ready_to_present', (wakaData) => {
         const player = players[socket.id];
         if(player) {
             player.finalWaka = wakaData;
-            
-            // 和歌を繋げてログ表示
-            const fullWaka = wakaData.map(w => w.text).join(" ");
-            console.log(`[完成] ${player.name} の和歌: 『${fullWaka}』`);
-            
             io.emit('announce_start', { name: player.name });
         }
     });
 
     // 6. 1フレーズ表示
     socket.on('reveal_step', (cardObj) => {
-        // 詳細すぎるのでここはログ省略しても良いが、デバッグ用に残すなら以下
-        // console.log(`[発表] ... ${cardObj.text}`);
         io.emit('show_step', cardObj);
     });
 
@@ -134,10 +121,23 @@ io.on('connection', (socket) => {
         if (currentRevealIndex >= revealOrder.length) {
             console.log("🏁 全員の発表が終了しました。結果画面へ移行します。");
             
+            // 結果リスト作成
             const results = revealOrder.map(id => {
                 const p = players[id];
                 return { name: p.name, waka: p.finalWaka };
             }).filter(item => item.waka);
+
+            // ★履歴に追加（先頭に追加）
+            // unshiftで前に追加していくことで、最新が先頭に来るようにする
+            // 複数人分を一気に追加するためループさせるか、展開して追加
+            results.forEach(res => {
+                wakaHistory.unshift(res);
+            });
+
+            // 50件を超えたら古いものを削除
+            if (wakaHistory.length > MAX_HISTORY) {
+                wakaHistory = wakaHistory.slice(0, MAX_HISTORY);
+            }
 
             io.emit('game_over', results);
             resetGame();
@@ -219,12 +219,9 @@ function nextRevealTurn() {
     const nextPlayerId = revealOrder[currentRevealIndex];
     if (players[nextPlayerId]) {
         const nextPlayerName = players[nextPlayerId].name;
-        console.log(`👉 次の発表者: ${nextPlayerName} さん`);
-        
         io.emit('update_reveal_status', { currentName: nextPlayerName, isMe: false });
         io.to(nextPlayerId).emit('your_reveal_turn', { hand: players[nextPlayerId].hand });
     } else {
-        // プレイヤー不在時のスキップ処理
         currentRevealIndex++;
         if (currentRevealIndex >= revealOrder.length) {
             io.emit('game_over', []); 
