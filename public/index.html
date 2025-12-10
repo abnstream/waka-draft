@@ -54,46 +54,21 @@
         }
         .next-phrase-preview { font-size: 24px; font-weight: bold; color: #d32f2f; margin: 15px 0;}
 
-        /* --- ★結果発表画面のデザイン --- */
-        #results-container {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 20px;
-            margin-top: 20px;
-        }
+        /* 結果発表画面 */
+        #results-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin-top: 20px; }
         .result-card {
-            background: #fff;
-            border: 1px solid #ccc;
-            box-shadow: 3px 3px 6px rgba(0,0,0,0.2);
-            padding: 20px;
-            width: 180px;
-            min-height: 300px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            position: relative;
+            background: #fff; border: 1px solid #ccc; box-shadow: 3px 3px 6px rgba(0,0,0,0.2);
+            padding: 20px; width: 180px; min-height: 300px;
+            display: flex; flex-direction: column; align-items: center; position: relative;
         }
-        /* 短冊の中身 */
         .result-waka-content {
-            flex-grow: 1;
-            display: flex;
-            gap: 8px;
-            writing-mode: vertical-rl;
-            font-size: 18px;
-            line-height: 1.5;
-            font-weight: bold;
-            margin-bottom: 20px;
-            justify-content: center;
+            flex-grow: 1; display: flex;
+            /* 修正：row-reverseを削除して正しい順序に */
+            gap: 8px; writing-mode: vertical-rl;
+            font-size: 18px; line-height: 1.5; font-weight: bold;
+            margin-bottom: 20px; justify-content: center;
         }
-        .result-author {
-            font-size: 16px;
-            color: #555;
-            border-top: 1px solid #eee;
-            padding-top: 10px;
-            width: 100%;
-        }
-        /* 花丸装飾（CSSだけで描画） */
+        .result-author { font-size: 16px; color: #555; border-top: 1px solid #eee; padding-top: 10px; width: 100%; }
         .flower-mark {
             position: absolute; top: -10px; right: -10px;
             width: 40px; height: 40px; background: #ffcc00; border-radius: 50%;
@@ -173,9 +148,7 @@
     <div id="end-screen" class="screen">
         <h2>【 選句会（結果発表） 】</h2>
         <p>全員の和歌が出揃いました。</p>
-        
         <div id="results-container"></div>
-        
         <br><br>
         <button onclick="location.reload()" style="background:#ffccaa;">宴を終了して最初に戻る</button>
     </div>
@@ -186,6 +159,22 @@
         let myHand = []; 
         let composedWaka = [null, null, null, null, null];
         let revealIndex = 0;
+
+        // --- ★効果音の読み込み ---
+        // public/sounds/ フォルダにファイルを置いてください
+        const audioStart = new Audio('/sounds/start.mp3');
+        const audioTurn = new Audio('/sounds/turn.mp3');
+        
+        // 音量を少し調整（お好みで）
+        audioStart.volume = 0.5;
+        audioTurn.volume = 0.5;
+
+        // SE再生用ヘルパー関数
+        function playSE(audioObj) {
+            // ブラウザの制限で再生できない場合のエラーを握りつぶす
+            audioObj.currentTime = 0; // 頭出し
+            audioObj.play().catch(e => console.log("SE再生エラー(ユーザー操作待ち):", e));
+        }
 
         function showScreen(id) {
             document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
@@ -201,9 +190,19 @@
             document.getElementById('player-list').innerHTML = names.map(n => `<li>${n}</li>`).join("");
         });
         socket.on('error_msg', msg => alert(msg));
-        socket.on('move_to_input', () => showScreen('input-screen'));
+        
+        // ★ゲーム開始SE
+        socket.on('move_to_input', () => {
+            playSE(audioStart);
+            showScreen('input-screen');
+        });
 
+        // ★ドラフト ターン通知SE
         socket.on('next_draft_turn', (data) => {
+            // もしパックの中身があるなら、それは自分のターン
+            if(data.pack.length > 0) {
+                playSE(audioTurn);
+            }
             showScreen('draft-screen');
             const area = document.getElementById('pack-area');
             area.innerHTML = "";
@@ -232,7 +231,10 @@
             }
         });
 
+        // ★発表 自分のターン通知SE
         socket.on('your_reveal_turn', (data) => {
+            playSE(audioTurn); // 自分の番が来たら鳴らす
+            
             myHand = data.hand;
             composedWaka = [null, null, null, null, null];
             showScreen('compose-screen');
@@ -257,35 +259,28 @@
             area.appendChild(span); 
         });
 
-        // ★結果表示処理
         socket.on('game_over', (results) => {
             showScreen('end-screen');
             const container = document.getElementById('results-container');
-            container.innerHTML = ""; // クリア
+            container.innerHTML = ""; 
 
             results.forEach(item => {
-                // item = { name: "Aさん", waka: [{text:"...", type:5}, ...] }
                 const card = document.createElement('div');
                 card.className = 'result-card';
                 
-                // 和歌部分（縦書き）
                 const contentDiv = document.createElement('div');
                 contentDiv.className = 'result-waka-content';
                 
-                // 57577の順でspanを追加（縦書きCSSで並ぶ）
                 item.waka.forEach(wordObj => {
                     const span = document.createElement('span');
                     span.innerText = wordObj.text;
-                    // 色をつける場合はここ（今回は黒字で見やすく統一していますが、好みでclass追加OK）
                     contentDiv.appendChild(span);
                 });
 
-                // 名前部分
                 const nameDiv = document.createElement('div');
                 nameDiv.className = 'result-author';
                 nameDiv.innerText = item.name;
 
-                // 花丸（飾り）
                 const flower = document.createElement('div');
                 flower.className = 'flower-mark';
                 flower.innerText = "💮";
@@ -301,6 +296,9 @@
         function joinGame() {
             const name = document.getElementById('username').value;
             if(!name) return;
+            // ユーザーアクション（クリック）があったタイミングで
+            // 一度無音で再生しておくと、後で自動再生ブロックされにくくなるテクニック
+            // （今回は簡易的に実装）
             socket.emit('join_game', name);
             document.getElementById('start-area').style.display = 'block';
         }
@@ -371,9 +369,7 @@
                 alert("言葉が埋まっていません！");
                 return;
             }
-            // ★変更：ここで和歌データをサーバーに送る！
             socket.emit('ready_to_present', composedWaka);
-            
             revealIndex = 0;
             showScreen('controller-screen');
             updateControllerUI();
