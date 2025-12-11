@@ -84,8 +84,16 @@
 
     <div id="lobby-screen" class="screen active">
         <h3>名前を入力して参加</h3>
-        <input type="text" id="username" placeholder="雅号（名前）">
-        <button onclick="joinGame()">いざ、参る</button>
+        
+        <div id="join-interface">
+            <input type="text" id="username" placeholder="雅号（名前）">
+            <button onclick="joinGame()">いざ、参る</button>
+        </div>
+
+        <div id="join-status" style="display:none; color: #008800; font-weight: bold; margin-bottom: 15px;">
+            エントリー完了。<br>参加者が集まるのを待っています...
+        </div>
+
         <ul id="player-list" style="list-style:none; padding:0;"></ul>
         <div id="start-area" style="display:none;">
             <button onclick="sendStartSignal()" style="background:#ffcccc;">ゲーム開始</button>
@@ -216,30 +224,25 @@
             playSE(audioStart);
             showScreen('input-screen');
             
-            // ★追加：次のゲームのためにUIをリセット（表示させる）
+            // 次のゲームのためにUIをリセット
             document.getElementById('input-interface').style.display = 'block';
             document.getElementById('wait-msg').innerText = "";
             document.querySelectorAll('#inputs input').forEach(i => i.value = ""); 
         });
 
-        // ★追加：提出状況の更新
         socket.on('update_submit_status', (data) => {
             const waitMsg = document.getElementById('wait-msg');
-            // 入力UIが消えている＝自分は送信済みの場合のみ表示更新
             if (document.getElementById('input-interface').style.display === 'none') {
                 waitMsg.innerText = `待機中...  [ ${data.current} / ${data.total} ]`;
             }
         });
 
-        // ドラフト画面受信
         socket.on('next_draft_turn', (data) => {
-            // ★手札データの更新（バグ修正）
             myHand = data.hand; 
 
             if(data.pack.length > 0) playSE(audioTurn);
             showScreen('draft-screen');
             
-            // ★追加機能：送り主を表示
             const senderArea = document.getElementById('pack-sender-info');
             if (data.fromName) {
                 senderArea.innerText = `【 ${data.fromName} 】より着信`;
@@ -267,13 +270,11 @@
             resetRevealScreen("発表の準備中...");
         });
 
-        // 待機画面受信
         socket.on('update_reveal_status', (data) => {
             if(!data.isMe) {
                 showScreen('reveal-screen');
                 resetRevealScreen(`${data.currentName} さんが、整えています...`);
                 
-                // ★追加機能：待機中も自分の手札を表示する
                 const container = document.getElementById('waiting-hand-container');
                 const list = document.getElementById('waiting-hand-list');
                 container.style.display = 'block';
@@ -292,13 +293,11 @@
             }
         });
 
-        // 自分の発表ターン受信
         socket.on('your_reveal_turn', (data) => {
             playSE(audioTurn); 
             myHand = data.hand;
             composedWaka = [null, null, null, null, null];
             
-            // ★追加機能：自分の番なので待機用表示は隠す
             document.getElementById('waiting-hand-container').style.display = 'none';
 
             showScreen('compose-screen');
@@ -340,9 +339,16 @@
 
         // --- 操作処理 ---
         function joinGame() {
-            const name = document.getElementById('username').value;
+            const nameInput = document.getElementById('username');
+            const name = nameInput.value;
             if(!name) return;
+            
             socket.emit('join_game', name);
+            
+            // ★変更：入力欄を隠して、ステータスを表示
+            document.getElementById('join-interface').style.display = 'none';
+            document.getElementById('join-status').style.display = 'block';
+            
             document.getElementById('start-area').style.display = 'block';
         }
         function sendStartSignal() { socket.emit('start_game_signal'); }
@@ -391,7 +397,6 @@
             const w5 = Array.from(document.querySelectorAll('.w5')).map(i => ({ text: i.value, type: 5 }));
             const w7 = Array.from(document.querySelectorAll('.w7')).map(i => ({ text: i.value, type: 7 }));
             
-            // 空欄チェック
             if(w5.some(v=>!v.text) || w7.some(v=>!v.text)) {
                 alert("すべての言葉を入力してください");
                 return;
@@ -399,7 +404,6 @@
 
             socket.emit('submit_pack', [...w5, ...w7]);
             
-            // ★変更：入力エリア・ボタンを隠して待機メッセージを表示
             document.getElementById('input-interface').style.display = 'none';
             document.getElementById('wait-msg').innerText = "待機中...";
         }
@@ -504,18 +508,13 @@
 
 // --- ★自動入力データ（古典 × ネットスラング 闇鍋MIX版） ---
         const WORDS_5 = [
-            // --- ★百人一首（有名どころ） ---
             "千早ぶる", "花の色は", "君がため", "久方の", "奥山に",
             "秋の田の", "天の原", "めぐりあひて", "いにしへの", "玉の緒よ",
-
-            // --- 結び・感情・状態 ---
             "だった件", "やってみた", "バズってる", "草生える", "詰んでいる", 
             "尊すぎ", "無理ゲーだ", "逝ってよし", "顔が良い", "確変中",
             "放送事故", "倍返し", "優勝だ", "オワコン化", "爆死した",
             "沼ったわ", "知らんけど", "ほんとそれ", "わかりみが", "回避不可", 
             "真顔です", "虚無になる", "神回避", "末期です", "全裸待機",
-
-            // --- 名詞・主語 ---
             "異世界で", "推しの子が", "無双する", "黒歴史", "勇者より",
             "魔王まで", "スライムが", "転売ヤー", "AIが", "締め切りが",
             "メンヘラが", "陰キャだし", "社畜だし", "概念が", "語彙力が",
@@ -524,17 +523,12 @@
         ];
         
         const WORDS_7 = [
-            // --- ★百人一首（有名どころ） ---
             "神のまにまに", "からくれないに", "夢の通ひ路", "富士の高嶺に", "衣ほすてふ",
             "わが身世にふる", "滝の白糸", "あまつ空なる", "みかさの山に", "世をうぢ山と",
-
-            // --- 異世界・ファンタジー・ラノベ風 ---
             "転生したら", "レベルマックスで", "追放された", "婚約破棄で", "悪役令嬢",
             "ダンジョン飯を", "スローライフを", "ハーレム展開", "ステータス見たら", "魔法が使えて",
             "最強すぎて", "ざまぁ展開", "俺だけ使える", "スキル獲得", "裏技つかって",
             "レベル１から", "魔力ゼロでも", "パーティ追放", "勇者辞めます", "チート能力",
-
-            // --- 現代社会・ネット・日常 ---
             "公式が病気", "スパチャ投げ銭", "チャンネル登録", "サーバーダウン", "炎上案件",
             "リモートワーク", "有給消化", "タスク多すぎ", "進捗どうです", "意識高くて",
             "自己肯定感", "実家のような", "マウント取って", "推しが尊い", "フラグ回収",
