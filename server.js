@@ -9,7 +9,7 @@ app.use(express.static('public'));
 const MIN_PLAYERS = 2; 
 const MAX_PLAYERS = 7; 
 const PORT = process.env.PORT || 3000;
-const MAX_HISTORY = 50; // ★履歴の最大保存数
+const MAX_HISTORY = 50; 
 
 // --- ゲームの状態変数 ---
 let players = {};
@@ -34,12 +34,7 @@ function resetGame() {
     playerOrder = [];
     revealOrder = [];
     currentRevealIndex = 0;
-    Object.keys(players).forEach(id => {
-        players[id].pack = [];
-        players[id].hand = [];
-        players[id].selected = null;
-        players[id].finalWaka = null;
-    });
+    // プレイヤー情報はdisconnectで消えるため、ここでplayersのリセットは最小限でOK
     console.log("=========================================");
     console.log("   🔄 ゲーム状態をリセットしました");
     console.log("=========================================");
@@ -63,7 +58,7 @@ io.on('connection', (socket) => {
         io.emit('update_player_list', Object.values(players).map(p => p.name));
     });
 
-    // ★追加：履歴データの要求に応答
+    // 履歴データの要求に応答
     socket.on('request_history', () => {
         socket.emit('receive_history', wakaHistory);
     });
@@ -127,19 +122,25 @@ io.on('connection', (socket) => {
                 return { name: p.name, waka: p.finalWaka };
             }).filter(item => item.waka);
 
-            // ★履歴に追加（先頭に追加）
-            // unshiftで前に追加していくことで、最新が先頭に来るようにする
-            // 複数人分を一気に追加するためループさせるか、展開して追加
+            // 履歴に追加
             results.forEach(res => {
                 wakaHistory.unshift(res);
             });
-
-            // 50件を超えたら古いものを削除
             if (wakaHistory.length > MAX_HISTORY) {
                 wakaHistory = wakaHistory.slice(0, MAX_HISTORY);
             }
 
             io.emit('game_over', results);
+
+            // ★追加機能：全員の接続を強制切断（名前残りを防ぐため）
+            io.fetchSockets().then((sockets) => {
+                sockets.forEach((s) => s.disconnect(true));
+            }).catch(err => {
+                // 古いSocket.ioバージョンの場合のフォールバック
+                console.log("Socket切断エラー(またはバージョン差異):", err);
+                Object.values(io.sockets.sockets).forEach(s => s.disconnect(true));
+            });
+
             resetGame();
         } else {
             nextRevealTurn();
@@ -199,10 +200,16 @@ function rotatePacks() {
 }
 
 function startDraftTurn() {
-    playerOrder.forEach(id => {
+    playerOrder.forEach((id, index) => {
+        // ★追加機能：誰から回ってきたか特定
+        const prevIndex = (index - 1 + playerOrder.length) % playerOrder.length;
+        const prevPlayerId = playerOrder[prevIndex];
+        const fromName = players[prevPlayerId] ? players[prevPlayerId].name : "誰か";
+
         io.to(id).emit('next_draft_turn', {
             pack: players[id].pack,
-            hand: players[id].hand
+            hand: players[id].hand,
+            fromName: fromName // 送り主の名前を追加
         });
     });
 }
@@ -222,6 +229,7 @@ function nextRevealTurn() {
         io.emit('update_reveal_status', { currentName: nextPlayerName, isMe: false });
         io.to(nextPlayerId).emit('your_reveal_turn', { hand: players[nextPlayerId].hand });
     } else {
+        // プレイヤーが不在の場合はスキップ
         currentRevealIndex++;
         if (currentRevealIndex >= revealOrder.length) {
             io.emit('game_over', []); 

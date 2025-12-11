@@ -110,6 +110,9 @@
 
     <div id="draft-screen" class="screen">
         <h3>回ってきた言葉</h3>
+        
+        <p id="pack-sender-info" style="color: #d32f2f; font-weight: bold;"></p>
+        
         <div id="pack-area"></div>
         <hr>
         <h4>手元の言葉</h4>
@@ -146,6 +149,11 @@
         <h3 id="reveal-status-msg">待機中...</h3>
         <div id="presentation-area"></div>
         <div id="author-display" class="author-name"></div>
+
+        <div id="waiting-hand-container" style="margin-top: 40px; border-top: 1px dashed #ccc; padding-top: 10px; display:none;">
+            <p style="font-size:12px; color:#888;">あなたの手持ち札</p>
+            <div id="waiting-hand-list" style="display:flex; justify-content:center; gap:5px; flex-wrap:wrap;"></div>
+        </div>
     </div>
 
     <div id="end-screen" class="screen">
@@ -205,9 +213,19 @@
             showScreen('input-screen');
         });
 
+        // ドラフト画面受信
         socket.on('next_draft_turn', (data) => {
             if(data.pack.length > 0) playSE(audioTurn);
             showScreen('draft-screen');
+            
+            // ★追加機能：送り主を表示
+            const senderArea = document.getElementById('pack-sender-info');
+            if (data.fromName) {
+                senderArea.innerText = `【 ${data.fromName} 】より着信`;
+            } else {
+                senderArea.innerText = "";
+            }
+
             const area = document.getElementById('pack-area');
             area.innerHTML = "";
             if(data.pack.length === 0) area.innerHTML = "他のプレイヤー待ち...";
@@ -228,17 +246,40 @@
             resetRevealScreen("発表の準備中...");
         });
 
+        // 待機画面受信
         socket.on('update_reveal_status', (data) => {
             if(!data.isMe) {
                 showScreen('reveal-screen');
                 resetRevealScreen(`${data.currentName} さんが、整えています...`);
+                
+                // ★追加機能：待機中も自分の手札を表示する
+                const container = document.getElementById('waiting-hand-container');
+                const list = document.getElementById('waiting-hand-list');
+                container.style.display = 'block';
+                list.innerHTML = "";
+                
+                myHand.forEach(cardObj => {
+                    if(!cardObj) return;
+                    const span = document.createElement('span');
+                    span.className = `card-btn ${getColorClass(cardObj)}`;
+                    span.style.fontSize = "12px"; 
+                    span.style.padding = "5px 8px";
+                    span.style.cursor = "default";
+                    span.innerText = cardObj.text;
+                    list.appendChild(span);
+                });
             }
         });
 
+        // 自分の発表ターン受信
         socket.on('your_reveal_turn', (data) => {
             playSE(audioTurn); 
             myHand = data.hand;
             composedWaka = [null, null, null, null, null];
+            
+            // ★追加機能：自分の番なので待機用表示は隠す
+            document.getElementById('waiting-hand-container').style.display = 'none';
+
             showScreen('compose-screen');
             renderComposeHand();
             renderSlots();
@@ -263,20 +304,16 @@
 
         socket.on('game_over', (results) => {
             showScreen('end-screen');
-            renderCards(results, 'results-container'); // 共通関数化
+            renderCards(results, 'results-container');
         });
 
-        // ★追加：履歴データ受信
         socket.on('receive_history', (historyList) => {
             const container = document.getElementById('history-container');
             container.innerHTML = "";
-            
             if (historyList.length === 0) {
                 container.innerHTML = "<p>まだ履歴がありません。</p>";
                 return;
             }
-            
-            // リザルトと同じ形式でカードを表示
             renderCards(historyList, 'history-container');
         });
 
@@ -289,16 +326,14 @@
         }
         function sendStartSignal() { socket.emit('start_game_signal'); }
 
-        // ★履歴ボタンの処理
         function openHistory() {
-            socket.emit('request_history'); // サーバーへ要求
+            socket.emit('request_history'); 
             showScreen('history-screen');
         }
         function backToLobby() {
             showScreen('lobby-screen');
         }
 
-        // カード描画の共通関数（リザルトと履歴で使用）
         function renderCards(dataList, containerId) {
             const container = document.getElementById(containerId);
             container.innerHTML = "";
@@ -444,10 +479,10 @@
             "秋の田の", "天の原", "めぐりあひて", "いにしへの", "玉の緒よ",
 
             // --- 結び・感情・状態 ---
-            "だった件", "やってみた", "バズってる", "草生える", "詰んでいる", // 4音→5音へ修正
+            "だった件", "やってみた", "バズってる", "草生える", "詰んでいる", 
             "尊すぎ", "無理ゲーだ", "逝ってよし", "顔が良い", "確変中",
             "放送事故", "倍返し", "優勝だ", "オワコン化", "爆死した",
-            "沼ったわ", "知らんけど", "ほんとそれ", "わかりみが", "回避不可", // 4音→5音へ修正
+            "沼ったわ", "知らんけど", "ほんとそれ", "わかりみが", "回避不可", 
             "真顔です", "虚無になる", "神回避", "末期です", "全裸待機",
 
             // --- 名詞・主語 ---
@@ -455,7 +490,7 @@
             "魔王まで", "スライムが", "転売ヤー", "AIが", "締め切りが",
             "メンヘラが", "陰キャだし", "社畜だし", "概念が", "語彙力が",
             "公式が", "運営が", "ガチャ運が", "サウナにて", "猫ミーム",
-            "上司から", "税金が",   "配信者",   "スパチャ飛ぶ", "アンチ湧く" // 長すぎる語・4音語を修正
+            "上司から", "税金が",   "配信者",   "スパチャ飛ぶ", "アンチ湧く" 
         ];
         
         const WORDS_7 = [
