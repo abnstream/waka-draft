@@ -215,6 +215,9 @@
 
         // ドラフト画面受信
         socket.on('next_draft_turn', (data) => {
+            // 手札データを更新
+            myHand = data.hand; 
+
             if(data.pack.length > 0) playSE(audioTurn);
             showScreen('draft-screen');
             
