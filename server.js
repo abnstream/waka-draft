@@ -82,6 +82,12 @@ io.on('connection', (socket) => {
     socket.on('submit_pack', (packData) => {
         if (!players[socket.id]) return;
         players[socket.id].pack = packData;
+
+        // ★追加機能：提出状況を集計して全員に通知
+        const submittedCount = Object.values(players).filter(p => p.pack.length > 0).length;
+        const totalPlayers = Object.keys(players).length;
+        io.emit('update_submit_status', { current: submittedCount, total: totalPlayers });
+
         checkAllSubmitted();
     });
 
@@ -136,7 +142,6 @@ io.on('connection', (socket) => {
             io.fetchSockets().then((sockets) => {
                 sockets.forEach((s) => s.disconnect(true));
             }).catch(err => {
-                // 古いSocket.ioバージョンの場合のフォールバック
                 console.log("Socket切断エラー(またはバージョン差異):", err);
                 Object.values(io.sockets.sockets).forEach(s => s.disconnect(true));
             });

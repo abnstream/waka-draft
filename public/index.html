@@ -97,15 +97,19 @@
 
     <div id="input-screen" class="screen">
         <h3>言葉を入力</h3>
-        <button onclick="autoFill()">自動入力（百人一首）</button>
-        <div id="inputs">
-            <p style="color:#cc0000; font-weight:bold;">五文字（赤）</p>
-            <input class="w5"><input class="w5"><input class="w5">
-            <p style="color:#0000cc; font-weight:bold;">七文字（青）</p>
-            <input class="w7"><input class="w7"><input class="w7"><input class="w7">
+        
+        <div id="input-interface">
+            <button onclick="autoFill()">自動入力（百人一首）</button>
+            <div id="inputs">
+                <p style="color:#cc0000; font-weight:bold;">五文字（赤）</p>
+                <input class="w5"><input class="w5"><input class="w5">
+                <p style="color:#0000cc; font-weight:bold;">七文字（青）</p>
+                <input class="w7"><input class="w7"><input class="w7"><input class="w7">
+            </div>
+            <button onclick="sendPack()">パック送信</button>
         </div>
-        <button onclick="sendPack()">パック送信</button>
-        <div id="wait-msg"></div>
+
+        <div id="wait-msg" style="font-weight:bold; margin-top:20px; color:#d32f2f;"></div>
     </div>
 
     <div id="draft-screen" class="screen">
@@ -211,11 +215,25 @@
         socket.on('move_to_input', () => {
             playSE(audioStart);
             showScreen('input-screen');
+            
+            // ★追加：次のゲームのためにUIをリセット（表示させる）
+            document.getElementById('input-interface').style.display = 'block';
+            document.getElementById('wait-msg').innerText = "";
+            document.querySelectorAll('#inputs input').forEach(i => i.value = ""); 
+        });
+
+        // ★追加：提出状況の更新
+        socket.on('update_submit_status', (data) => {
+            const waitMsg = document.getElementById('wait-msg');
+            // 入力UIが消えている＝自分は送信済みの場合のみ表示更新
+            if (document.getElementById('input-interface').style.display === 'none') {
+                waitMsg.innerText = `待機中...  [ ${data.current} / ${data.total} ]`;
+            }
         });
 
         // ドラフト画面受信
         socket.on('next_draft_turn', (data) => {
-            // 手札データを更新
+            // ★手札データの更新（バグ修正）
             myHand = data.hand; 
 
             if(data.pack.length > 0) playSE(audioTurn);
@@ -372,8 +390,17 @@
         function sendPack() {
             const w5 = Array.from(document.querySelectorAll('.w5')).map(i => ({ text: i.value, type: 5 }));
             const w7 = Array.from(document.querySelectorAll('.w7')).map(i => ({ text: i.value, type: 7 }));
+            
+            // 空欄チェック
+            if(w5.some(v=>!v.text) || w7.some(v=>!v.text)) {
+                alert("すべての言葉を入力してください");
+                return;
+            }
+
             socket.emit('submit_pack', [...w5, ...w7]);
-            document.getElementById('inputs').innerHTML = "";
+            
+            // ★変更：入力エリア・ボタンを隠して待機メッセージを表示
+            document.getElementById('input-interface').style.display = 'none';
             document.getElementById('wait-msg').innerText = "待機中...";
         }
 
